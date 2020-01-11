@@ -5,3 +5,7 @@ __pycache__/
 wd/
 original_apks/
 instrumented/
+reports/
+
+.vscode/
+log.log
