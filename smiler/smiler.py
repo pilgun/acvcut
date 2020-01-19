@@ -104,9 +104,17 @@ def start_instrumenting(package, release_thread=False, onstop=None, timeout=None
     grant_storage_permission(package)
     lock_thread = "" if release_thread else "-w"
     cmd = '{} shell am instrument -e coverage true {} {}/{}'.format(config.adb_path, lock_thread, package, config.INSTRUMENTING_NAME)
-
     if release_thread:
         os.system(cmd)
+        locked = sdcard_path_exists(package) # dir is created, service started # to be change to another lock file on start
+        timeout = config.default_onstop_timeout if timeout is None else timeout
+        while not locked and timeout:
+            time.sleep(1)
+            logging.info("wait for coverage service activation {}".format(package))
+            locked = sdcard_path_exists(package)
+            timeout -= 1
+        if not locked:
+            raise Exception("Coverage service did not start in time ({})".format(package))
         return
     out = ''
     def run():
@@ -127,11 +135,15 @@ def start_instrumenting(package, release_thread=False, onstop=None, timeout=None
     print("Press Ctrl+C to finish ...")
     signal.signal(signal.SIGINT, stop)
     
-def coverage_is_locked(package_name):
-    cmd = "{} shell \"test -e /mnt/sdcard/{}.lock > /dev/null 2>&1 && echo \'1\' || echo \'0\'\"".format(config.adb_path, package_name)
+def sdcard_path_exists(path):
+    cmd = "{} shell \"test -e /mnt/sdcard/{} > /dev/null 2>&1 && echo \'1\' || echo \'0\'\"".format(config.adb_path, path)
     logging.debug('Command to check lock file:' + cmd)
     locked = subprocess.check_output(cmd, shell=True).replace("\n","").replace("\r", "")
     return locked == '1'
+
+def coverage_is_locked(package_name):
+    lock_file = "{}.lock".format(package_name)
+    return sdcard_path_exists(lock_file)
 
 def stop_instrumenting(package_name, timeout=None):
     cmd = "{} shell am broadcast -a 'tool.acv.finishtesting'".format(config.adb_path)

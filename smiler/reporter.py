@@ -199,12 +199,10 @@ def save_class(cl, class_template, output_dir, app_name, granularity):
             else:
                 if ins.buf.startswith("return"):
                     lbl = get_first_lbl_by_index(labels, i)
-                    if lbl is not None:
-                        if lbl.covered:
-                            ins_buf.append(span_tab_tag(ins.buf, EXEC_CLASS))
+                    if lbl and lbl.covered or (not lbl and m.insns[i-1].covered):
+                        ins_buf.append(span_tab_tag(ins.buf, EXEC_CLASS))
                     else:
-                        if m.insns[i-1].covered:
-                            ins_buf.append(span_tab_tag(ins.buf, EXEC_CLASS))
+                        ins_buf.append(span_tab_tag(ins.buf))
                 else:
                     if i<len(m.insns)-1 and m.insns[i+1].covered and not_instr_regex.match(m.insns[i+1].buf):
                         ins_buf.append(span_tab_tag(ins.buf, EXEC_CLASS))
