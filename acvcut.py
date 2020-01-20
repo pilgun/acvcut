@@ -53,7 +53,7 @@ def remove_not_covered_instructions(smalitree):
     print("removed {} methods, left {}".format(j, sum([len(cl.methods) for cl in smalitree.classes])))
 
 
-def remove_not_covered_methods(smalitree):
+def remove_methods_in_not_covered_classes(smalitree):
     i = 0
     j = 0
 
@@ -71,15 +71,21 @@ def remove_not_covered_methods(smalitree):
     print("removed {} methods, left {}".format(j, sum([len(cl.methods) for cl in smalitree.classes])))
 
 
-def remove_not_covered_classes(smalitree):
-    i = 0
-    print("number original classes: {}".format(len(smalitree.classes)))
+def get_all_method_invokes(smalitree):
+    invokes = set()
     for cl in smalitree.classes:
-        if cl.not_covered():
-            i += 1
-            smalitree.classes.remove(cl)
-    print("removed {} classes".format(i))
-    print("number of left classes {}".format(len(smalitree.classes)))
+        for m in cl.methods:
+            for insn in m.insns:
+                if insn.opcode_name.startswith("invoke"):
+                    invokes.add(insn.obj.method_desc)
+    return invokes
+
+def get_all_methods_desc(smalitree):
+    signatures = set()
+    for cl in smalitree.classes:
+        for m in cl.methods:
+            signatures.add("{}->{}".format(cl.name, m.descriptor))
+    return signatures
 
 
 def main():
@@ -91,14 +97,32 @@ def main():
     out_apk_raw = r"C:\projects\droidmod\acvcut\wd\short_raw.apk"
     out_apk = r"C:\projects\droidmod\acvcut\wd\short.apk"
     smali_path = os.path.join(decompiled_app_dir, "smali")
-    clean_smali_dir(smali_path, original_smali_path)
+    #clean_smali_dir(smali_path, original_smali_path)
     rm_file(out_apk)
     rm_file(out_apk_raw)
     
     smalitree = reporter.get_covered_smalitree([ec], pickle)
+    invoked_methods = get_all_method_invokes(smalitree)
+    defined_methods = get_all_methods_desc(smalitree)
+    #print(methods_list)
+    #print(len(methods_list))
+    print(list(invoked_methods)[0])
+    print(list(defined_methods)[0])
+    print(len(invoked_methods))
+    print(len(defined_methods))
+    print("not called methods: {}".format(len(defined_methods - invoked_methods)))
+    print("methods are not in app: {}".format(len(invoked_methods - defined_methods)))
+    print("\n".join(sorted(list(invoked_methods))))
+    
     #remove_not_covered_instructions(smalitree)
-    #remove_not_covered_methods(smalitree)
-    remove_not_covered_classes(smalitree)
+    #remove_methods_in_not_covered_classes(smalitree)
+    # print(smalitree.classes[0].name)
+    # print(smalitree.classes[0].methods[0].name)
+    # print(smalitree.classes[0].methods[0].descriptor)
+    # print(smalitree.classes[0].methods[0].insns[0].buf)
+    # print(smalitree.classes[0].methods[0].insns[0].obj.method_desc)
+
+    return
 
     instrumenter = instrumenting.smali_instrumenter.Instrumenter(smalitree, "method", "io.pilgun.multidexapp")
    
