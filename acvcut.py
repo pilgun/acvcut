@@ -71,6 +71,15 @@ def remove_not_covered_methods(smalitree):
     print("removed {} methods, left {}".format(j, sum([len(cl.methods) for cl in smalitree.classes])))
 
 
+def remove_not_covered_classes(smalitree):
+    i = 0
+    print("number original classes: {}".format(len(smalitree.classes)))
+    for cl in smalitree.classes:
+        if cl.not_covered():
+            i += 1
+            smalitree.classes.remove(cl)
+    print("removed {} classes".format(i))
+    print("number of left classes {}".format(len(smalitree.classes)))
 
 
 def main():
@@ -82,17 +91,18 @@ def main():
     out_apk_raw = r"C:\projects\droidmod\acvcut\wd\short_raw.apk"
     out_apk = r"C:\projects\droidmod\acvcut\wd\short.apk"
     smali_path = os.path.join(decompiled_app_dir, "smali")
-    # clean_smali_dir(smali_path, original_smali_path)
+    clean_smali_dir(smali_path, original_smali_path)
     rm_file(out_apk)
     rm_file(out_apk_raw)
     
-    #smalitree = reporter.get_covered_smalitree([ec], pickle)
+    smalitree = reporter.get_covered_smalitree([ec], pickle)
     #remove_not_covered_instructions(smalitree)
     #remove_not_covered_methods(smalitree)
+    remove_not_covered_classes(smalitree)
 
-    #instrumenter = instrumenting.smali_instrumenter.Instrumenter(smalitree, "method", "io.pilgun.multidexapp")
+    instrumenter = instrumenting.smali_instrumenter.Instrumenter(smalitree, "method", "io.pilgun.multidexapp")
    
-    #instrumenter.save_instrumented_smali(smali_path, instrument=False)
+    instrumenter.save_instrumented_smali(smali_path, instrument=False)
     apktool = ApktoolInterface(javaPath = config.APKTOOL_JAVA_PATH,
                                javaOpts = config.APKTOOL_JAVA_OPTS,
                                pathApktool = Libs.APKTOOL_PATH,
