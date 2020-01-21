@@ -87,6 +87,43 @@ def get_all_methods_desc(smalitree):
             signatures.add("{}->{}".format(cl.name, m.descriptor))
     return signatures
 
+def remove_not_covered_if(smalitree):
+    for cl in smalitree.classes:
+        if cl.name == "Landroid/support/v7/app/AppCompatDelegateImplBase;":
+            print(cl.name)
+            print(cl.methods[0])
+            to_remove = []
+            start_ = 0
+            block = False
+            m = cl.methods[0]
+            print(m)
+            for i, insn in enumerate(m.insns):
+                if insn.opcode_name.startswith("if") and not insn.covered and insn.cover_code > -1:
+                    start_ = i
+                    block = True
+                    print(insn)
+                if block and (insn.covered or has_label_by_index(m.labels, i)):
+                    end_ = i
+                    del m.insns[start_:end_]
+                    recalculate_label_indexes(m.labels, start_, end_)
+            print("----------")
+            print(m)
+            print("----------")
+            break
+        #for m in cl.methods:
+
+def recalculate_label_indexes(labels, start_, end_):
+    d = end_ - start_
+    for (k, v) in labels.items():
+        if v.index >= end_:
+            v.index -= d
+
+
+def has_label_by_index(labels, index):
+    for (k, v) in labels.items():
+        if v.index == index:
+            return True
+    return False
 
 def main():
     pickle = r"C:\projects\droidmod\acvcut\wd\metadata\app.pickle"
@@ -102,27 +139,9 @@ def main():
     rm_file(out_apk_raw)
     
     smalitree = reporter.get_covered_smalitree([ec], pickle)
-    invoked_methods = get_all_method_invokes(smalitree)
-    defined_methods = get_all_methods_desc(smalitree)
-    #print(methods_list)
-    #print(len(methods_list))
-    print(list(invoked_methods)[0])
-    print(list(defined_methods)[0])
-    print(len(invoked_methods))
-    print(len(defined_methods))
-    print("not called methods: {}".format(len(defined_methods - invoked_methods)))
-    print("methods are not in app: {}".format(len(invoked_methods - defined_methods)))
-    print("\n".join(sorted(list(invoked_methods))))
+    remove_not_covered_if(smalitree)
     
-    #remove_not_covered_instructions(smalitree)
-    #remove_methods_in_not_covered_classes(smalitree)
-    # print(smalitree.classes[0].name)
-    # print(smalitree.classes[0].methods[0].name)
-    # print(smalitree.classes[0].methods[0].descriptor)
-    # print(smalitree.classes[0].methods[0].insns[0].buf)
-    # print(smalitree.classes[0].methods[0].insns[0].obj.method_desc)
-
-    return
+    #return
 
     instrumenter = instrumenting.smali_instrumenter.Instrumenter(smalitree, "method", "io.pilgun.multidexapp")
    
