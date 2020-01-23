@@ -89,27 +89,38 @@ def get_all_methods_desc(smalitree):
 
 def remove_not_covered_if(smalitree):
     for cl in smalitree.classes:
-        if cl.name == "Landroid/support/v7/app/AppCompatDelegateImplBase;":
-            print(cl.name)
-            print(cl.methods[0])
-            to_remove = []
-            start_ = 0
-            block = False
-            m = cl.methods[0]
-            print(m)
-            for i, insn in enumerate(m.insns):
-                if insn.opcode_name.startswith("if") and not insn.covered and insn.cover_code > -1:
-                    start_ = i
-                    block = True
-                    print(insn)
-                if block and (insn.covered or has_label_by_index(m.labels, i)):
-                    end_ = i
-                    del m.insns[start_:end_]
-                    recalculate_label_indexes(m.labels, start_, end_)
-            print("----------")
-            print(m)
-            print("----------")
-            break
+        #if cl.name == "Landroid/support/v7/app/AppCompatDelegateImplBase;":
+        if cl.name != "Landroid/support/constraint/ConstraintLayout;":
+            continue
+        # m = cl.methods[4]
+        # print("method name: {}".format(m.descriptor))
+        for m in cl.methods[7:8]:
+            print(m.descriptor)
+            # if m.name != "setChildrenConstraints":
+            #     continue
+            if not m.synchronized:
+                start_ = 0
+                block = False
+                blocks = 0
+                for i, insn in enumerate(m.insns):
+                    # if i == 18:
+                    #     print(i)
+                    if not block and insn.opcode_name.startswith("if") and not insn.covered: # and insn.cover_code > -1 and not has_label_by_index(m.labels, i):
+                        start_ = i
+                        block = True
+                        continue
+                    if block and (insn.covered or has_covered_lbl(m.labels, i)):
+                        end_ = i
+                        #print("\n".join([ins.buf for ins in m.insns[start_:end_]]))
+                        del m.insns[start_:end_]
+                        recalculate_label_indexes(m.labels, start_, end_)
+                        block = False
+                        blocks += 1
+                        if blocks == 6:
+                            break
+                        #break
+                #break
+        #    break
         #for m in cl.methods:
 
 def recalculate_label_indexes(labels, start_, end_):
@@ -125,6 +136,12 @@ def has_label_by_index(labels, index):
             return True
     return False
 
+def has_covered_lbl(labels, index):
+    for (k, v) in labels.items():
+        if v.index == index:
+            return v.covered
+    return False
+
 def main():
     pickle = r"C:\projects\droidmod\acvcut\wd\metadata\app.pickle"
     ec = r"C:\projects\droidmod\acvcut\reports\original_io.pilgun.multidexapp\ec_files\onstop_coverage_1578628898500.ec"
@@ -134,7 +151,7 @@ def main():
     out_apk_raw = r"C:\projects\droidmod\acvcut\wd\short_raw.apk"
     out_apk = r"C:\projects\droidmod\acvcut\wd\short.apk"
     smali_path = os.path.join(decompiled_app_dir, "smali")
-    #clean_smali_dir(smali_path, original_smali_path)
+    clean_smali_dir(smali_path, original_smali_path)
     rm_file(out_apk)
     rm_file(out_apk_raw)
     
