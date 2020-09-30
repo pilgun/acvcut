@@ -19,38 +19,107 @@ import re
 
 COV_CLASS = 'cov' #html class, ex: '<span class="%COV_CLASS%"/>'
 EXEC_CLASS = 'exec'
+IGNORE_TAG = 'ignore'
+MISSED = "missed"
 not_instr_regex = re.compile("^(move-result|move-exception).*$")
 
-def generate(package, pickle_path, output_dir, ec_dir=None, xml=True, html=True, granularity="instruction"):
+
+def generate(package, pickle_path, output_dir, ec_dir=None, xml=True, html=True, granularity="instruction", ignore_filter=None, concise=True):
     report_dir = os.path.join(output_dir, package, 'report')
     if ec_dir is None:
         ec_dir = config.get_ec_dir(output_dir, package)
-        smiler.get_execution_results(package, ec_dir)
-    recreate_dir(report_dir)
+        images_dir = config.get_images_dir(output_dir, package)
+        smiler.get_execution_results(package, ec_dir, images_dir)
+    Utils2.recreate_dir(report_dir)
     logging.info("report generating...")
     ec_files = [os.path.join(ec_dir, f) for f in os.listdir(ec_dir) if os.path.isfile(os.path.join(ec_dir, f))]
-    smalitree = get_covered_smalitree(ec_files, pickle_path)
+    smalitree = get_smalitree(pickle_path)
+    if ignore_filter:
+        smiler.apply_ignore_filter(smalitree, ignore_filter)
+    if concise:
+        logging.info("concise report...")
+        save_concise_report(report_dir, ec_files, smalitree)
+    if html or xml:
+        logging.info("html/xml report...")
+        generate_full_report(report_dir, package, ec_files, smalitree, html, xml, granularity)
+    logging.info("report saved: {0}".format(report_dir))
+
+
+def save_concise_report(report_dir, ec_files, st):
+    coverages = []
+    names = []
+    len_ecfiles = len(ec_files)
+    for i, ec in enumerate(ec_files):
+        #nullify_smalitree_coverage(st)
+        ec_coverage = read_ec(ec)
+        #cover_smalitree(st, ec_coverage)
+        cover_smalitree_cumulatively(st, ec_coverage)
+        lines_coverable = sum([cl.coverable() for cl in st.classes])
+        lines_covered = sum([cl.covered() for cl in st.classes])
+        cov = float(lines_covered) / lines_coverable
+        coverages.append(cov)
+        names.append(os.path.basename(ec))
+        print("{}: {} {}/{}".format(ec, cov, i, len_ecfiles))
+        #logging.info("{}: {} {}/{}".format(ec, cov, i, len_ecfiles))
+    path = os.path.join(report_dir, "coverages.csv")
+    save_csv_concise_report(path, names, coverages)
+
+
+def save_cumulative_concise_report():
+    report_dir = r"C:\projects\acvcut\acv_tw_droidbot4\X"
+    ec_dir = r"C:\projects\acvcut\acv_tw_droidbot4\ec_files"
+    pickle_path = r"C:\projects\acvcut\acv_twitter\metadata\com.twitter.android.lite.pickle"
+    if not os.path.exists(report_dir):
+        os.makedirs(report_dir)
+    st = get_smalitree(pickle_path)
+    ec_files = [os.path.join(ec_dir, f) for f in os.listdir(ec_dir) if os.path.isfile(os.path.join(ec_dir, f))]
+    len_ecfiles = len(ec_files)
+    coverages = []
+    names = []
+    for i, ec in enumerate(ec_files):
+        ec_coverage = read_ec(ec)
+        cover_smalitree_cumulatively(st, ec_coverage)
+        lines_coverable = sum([cl.coverable() for cl in st.classes])
+        lines_covered = sum([cl.covered() for cl in st.classes])
+        cov = float(lines_covered) / lines_coverable
+        coverages.append(cov)
+        names.append(os.path.basename(ec))
+        print("{}: {} {}/{}".format(os.path.basename(ec), cov, i, len_ecfiles))
+    path = os.path.join(report_dir, "coverages_cum.csv")
+    save_csv_concise_report(path, names, coverages)
+
+
+def save_csv_concise_report(path, names, coverages):
+    rows = []
+    for n, c in zip(names, coverages):
+        row = "{},{}".format(n, c)
+        rows.append(row)
+    text = "\n".join(rows)
+    Utils2.log_entry(path, text)
+    
+
+def generate_full_report(report_dir, package, ec_files, smalitree, html, xml, granularity):
+    for ec in ec_files:
+        coverage = read_ec(ec)
+        cover_smalitree(smalitree, coverage)
     granularity = Granularity.GRANULARITIES[granularity]
     if html:
         save_html_report(report_dir, smalitree, package, granularity)
     if xml:
         save_xml_report(report_dir, smalitree, package, granularity)
-    logging.info("report saved: {0}".format(report_dir))
 
 
-def get_covered_smalitree(ec_files, pickle_path):
-    st = None
+def get_smalitree(pickle_path):
     with open(pickle_path, 'rb') as f:
         st = pickle.load(f)
-    for ec in ec_files:
-        coverage = read_ec(ec)
-        cover_smalitree(st, coverage)
-    return st
+        return st
+
 
 def generate_xml(smalitree, app_name, granularity):
     serialiser = XmlSerialiser(smalitree, app_name, granularity)
     xml = serialiser.get_xml()
     return xml
+
 
 def save_xml_report(output_dir, smalitree, app_name, granularity):
     xml = generate_xml(smalitree, app_name, granularity)
@@ -58,6 +127,7 @@ def save_xml_report(output_dir, smalitree, app_name, granularity):
 
     with open(path, 'w') as f:
         f.write(xml)
+
 
 def save_html_report(output_dir, smalitree, app_name, granularity):
     templates = PageTemplateLoader(config.templates_path)
@@ -71,6 +141,7 @@ def save_html_report(output_dir, smalitree, app_name, granularity):
 
     save_coverage(smalitree, templates, output_dir, app_name, granularity)
 
+
 def save_coverage(tree, templates, output_dir, app_name, granularity):
     groups = Utils2.get_groupped_classes(tree)
     init_row = templates['init_row.pt']
@@ -82,6 +153,8 @@ def save_coverage(tree, templates, output_dir, app_name, granularity):
     for g in groups:
         (package, path, coverage_data) = save_package_indexhtml(g, templates, output_dir, app_name, granularity)
         coverage = coverage_data.get_formatted_coverage(granularity)
+        if not package:
+            package = "."
         row = init_row(elementlink=path, type='package', elementname=package,
                   coverage=coverage,
                   respath='', coverage_data=coverage_data,
@@ -100,15 +173,17 @@ def save_coverage(tree, templates, output_dir, app_name, granularity):
     root_path = ''
     html = index_template(table=Markup(table), appname=app_name, title=app_name, package=None, 
                           respath=root_path, file_name=None, granularity=Granularity.get(granularity))
-    path = os.path.join(output_dir, 'index.html')
+    path = os.path.join(output_dir, 'main_index.html')
     with open(path, 'w') as f:
         f.write(html)
-    
+
+
 def calculate_coverage(coveredlines, alllines):
     if alllines == 0:
         return None
     result = float(coveredlines) / alllines
     return ("%.5f" % (100 * result)) if result else None
+
 
 def save_package_indexhtml(class_group, templates, output_dir, app_name, granularity):
     folder = class_group[0].folder.replace('\\', '/')
@@ -160,14 +235,18 @@ def save_package_indexhtml(class_group, templates, output_dir, app_name, granula
         f.write(html)
     return (package_name, rel_path, total_coverage_data)
 
+
 def LI_TAG(str):
     return '%s' % str
+
 
 def span_tab_tag(txt, cl=''):
     return span_tag("\t{}".format(txt), cl)
 
+
 def span_tag(txt, cl=""):
     return '<span class="{}">{}</span>'.format(cl, txt)
+
 
 def get_first_lbl_by_index(lables, index):
     i = 0
@@ -176,6 +255,7 @@ def get_first_lbl_by_index(lables, index):
     if i < len(lables) and lables[i].index == index:
         return lables[i]
     return None
+
 
 def save_class(cl, class_template, output_dir, app_name, granularity):
     dir = os.path.join(output_dir, cl.folder)
@@ -204,7 +284,13 @@ def save_class(cl, class_template, output_dir, app_name, granularity):
                     else:
                         ins_buf.append(span_tab_tag(ins.buf))
                 else:
-                    if i<len(m.insns)-1 and m.insns[i+1].covered and not_instr_regex.match(m.insns[i+1].buf):
+                    if m.insns[i].cover_code > -1 and not m.insns[i].covered:
+                        ins_buf.append(span_tab_tag(ins.buf, MISSED))
+                        continue
+                    if i<len(m.insns)-1 and m.insns[i+1].covered and \
+                        ( not_instr_regex.match(m.insns[i+1].buf) or \
+                            m.insns[i].buf.startswith("goto") or \
+                            m.insns[i].opcode_name == "packed-switch" ):
                         ins_buf.append(span_tab_tag(ins.buf, EXEC_CLASS))
                     else:
                         ins_buf.append(span_tab_tag(ins.buf))
@@ -217,9 +303,9 @@ def save_class(cl, class_template, output_dir, app_name, granularity):
             else:
                 ins_buf.insert(l.index + count, span_tab_tag(l.buf))
             count += 1
-            for t in l.tries:
-                ins_buf.insert(l.index + count, span_tab_tag(t.buf))
-                count += 1
+            # for t in l.tries:
+            #     ins_buf.insert(l.index + count, span_tab_tag(t.buf))
+            #     count += 1
             if l.switch:
                 for sl in l.switch.buf:
                     ins_buf.insert(l.index + count, span_tab_tag(sl))
@@ -236,7 +322,11 @@ def save_class(cl, class_template, output_dir, app_name, granularity):
             p.reload()
             ins_buf[0:0] = [span_tab_tag(d) for d in p.buf]
         ins_buf.insert(0, span_tab_tag(m.get_registers_line()))
-        html_method_line = span_tag(cgi.escape(m.get_method_line()), COV_CLASS) if m.called else m.get_method_line()
+        html_method_line = cgi.escape(m.get_method_line())
+        if m.ignore:
+            html_method_line = span_tag(html_method_line, IGNORE_TAG)
+        elif m.called:
+            html_method_line = span_tag(html_method_line, COV_CLASS)
         ins_buf.insert(0, html_method_line)
         ins_buf.append(LI_TAG(".end method"))
         buf.append(LI_TAG(''))
@@ -251,6 +341,7 @@ def save_class(cl, class_template, output_dir, app_name, granularity):
     with open(class_path, 'w') as f:
         f.write(html)
 
+
 def read_ec(ec_path):
     pobj = ''
     with open(ec_path, mode='rb') as f:
@@ -258,22 +349,38 @@ def read_ec(ec_path):
         pobj = marshaller.readObject()
     return pobj
 
+
 def cover_smalitree(st, coverage):
-    i = 0
-    for c_i in range(len(st.classes)):
-        cl = st.classes[c_i]
+    cov_iter = enumerate(coverage)
+    for cl in st.classes:
         if cl.is_coverable():
-            cov_class = coverage[i]
-            i += 1
-            for m_i in range(len(cl.methods)):
-                method = cl.methods[m_i]
-                method.called = method.cover_code > -1 and cov_class[method.cover_code]
-                for ins in method.insns:
+            cov_class = next(cov_iter)[1]
+            for m in cl.methods:
+                m.called = m.cover_code > -1 and cov_class[m.cover_code]
+                for ins in m.insns:
                     ins.covered = ins.cover_code > -1 and cov_class[ins.cover_code]
-                for k, lbl in method.labels.items():
+                for lbl in m.labels.values():
                     lbl.covered = lbl.cover_code > -1 and cov_class[lbl.cover_code]
 
-def recreate_dir(directory):
-    if os.path.exists(directory):
-        shutil.rmtree(directory)
-    os.makedirs(directory)
+
+def cover_smalitree_cumulatively(st, coverage):
+    cov_iter = enumerate(coverage)
+    for cl in st.classes:
+        if cl.is_coverable():
+            cov_class = next(cov_iter)[1]
+            for m in cl.methods:
+                m.called = m.cover_code > -1 and (m.called or cov_class[m.cover_code])
+                for ins in m.insns:
+                    ins.covered = ins.cover_code > -1 and (ins.covered or cov_class[ins.cover_code])
+                for lbl in m.labels.values():
+                    lbl.covered = lbl.cover_code > -1 and (lbl.covered or cov_class[lbl.cover_code])
+
+
+def nullify_smalitree_coverage(st):
+    for cl in st.classes:
+        for m in cl.methods:
+            m.called = False
+            for ins in m.insns:
+                ins.covered = False
+            for lbl in m.labels.values():
+                lbl.covered = False

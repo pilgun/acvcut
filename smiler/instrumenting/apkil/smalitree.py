@@ -5,6 +5,7 @@ import shutil
 import StringIO
 import classnode 
 from logger import log
+from smiler.instrumenting.utils import Utils
 
 class SmaliTree(object):
 
@@ -12,6 +13,7 @@ class SmaliTree(object):
         self.foldername = ""
         self.smali_files = []
         self.classes = []
+        self.class_ref_dict = None
 
         self.__parse(foldername)
 
@@ -58,8 +60,12 @@ class SmaliTree(object):
 
     def save(self, new_foldername):
         print "Saving %s..." % new_foldername
-        if os.path.exists(new_foldername):
-            shutil.rmtree(new_foldername)
-        os.makedirs(new_foldername)
+        Utils.recreate_dir(new_foldername)
         for c in self.classes:
             c.save(new_foldername)
+
+    def update_class_ref_dict(self):
+        self.class_ref_dict = {}
+        for cl in self.classes:
+            cl.update_meth_ref_dict()
+            self.class_ref_dict[cl.name] = cl

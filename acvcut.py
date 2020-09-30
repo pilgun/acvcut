@@ -4,6 +4,7 @@ import yaml
 import shutil
 import logging
 import argparse
+import cPickle as pickle
 
 from logging import config as logging_config
 from smiler.config import config
@@ -12,169 +13,147 @@ from smiler import instrumenting
 from smiler.instrumenting.apktool_interface import ApktoolInterface
 from smiler.libs.libs import Libs
 from smiler import smiler
+from cutter import cutter
+from cutter import basic_block
+from cutter import methods
+from cutter import invokes
+
+parser = argparse.ArgumentParser(description='Runs the shrinking routine.')
+parser.add_argument("apk_path", metavar="apk_path", help="path to the original apk")
+parser.add_argument("--wd", metavar="wd", help="path to the working directory")
+parser.add_argument("--package", metavar="package", help="app package name")
+
+args = parser.parse_args()
+wd_path = args.wd # acvcut.wd_path
+apk_path = args.apk_path # acvcut.apk_path
+package = args.package # acvcut.package
 
 def setup_logging():
     with open(config.logging_yaml) as f:
         logging_config.dictConfig(yaml.safe_load(f.read()))
 
-# def prepare_apktool_dir(apktool_dir, app_path):
-#     apktool = r"c:\distr\android\apktool.jar"
-#     cmd = "java -jar {} d {} -o {} -f".format(apktool, app_path, apktool_dir)
-#     os.system(cmd)
 
-
-def clean_smali_dir(smali_path, original_smali_path):
+def clean_smali_dir(smali_path):
     if os.path.exists(smali_path):
         shutil.rmtree(smali_path)
-    shutil.copytree(original_smali_path, smali_path)
 
 
 def rm_file(path):
     if os.path.exists(path):
         os.remove(path)
 
+def get_ec_file(dir_path):
+    paths = [os.path.join(dir_path, n) for n in os.listdir(dir_path) if n.endswith(".ec")]
+    return paths
 
-def remove_not_covered_instructions(smalitree):
-    i = 0
-    j = 0
-    insns_amount = lambda classes: sum([sum([len(m.insns) for m in cl.methods]) for cl in classes])
-    insns_orig = insns_amount(smalitree.classes)
-    print("insns: {}".format(insns_orig))
-    for cl in smalitree.classes:
-        for m in cl.methods:
-            for insn in m.insns:
-                if insn.covered:
-                    m.insns.remove(insn)
-    insns_new = insns_amount(smalitree.classes)
-    print("insns: {}".format(insns_new))
+def save_pickle(path, smalitree):
+    if not os.path.exists(path):
+        with open(path, 'wb') as f:
+                pickle.dump(smalitree, f, pickle.HIGHEST_PROTOCOL)
+        print('pickle file saved: {0}'.format(path))
 
-    print("left classes: {}".format(len(smalitree.classes)))
-    print("removed {} classes".format(i))
-    print("removed {} methods, left {}".format(j, sum([len(cl.methods) for cl in smalitree.classes])))
+def load_pickle(path):
+    st = None
+    with open(path, 'rb') as f:
+        st = pickle.load(f)
+    return st
 
+app_name = os.path.basename(apk_path)
+instr_pickle_path = os.path.join(wd_path, "metadata", app_name[:-3]+'pickle')
+ec_dir = os.path.join(wd_path, package, "ec_files")
+decompiled_app_dir = os.path.join(wd_path, "dec_apk")
+original_smali_path = os.path.join(wd_path, "smali_orig")
+out_apk_raw = os.path.join(wd_path, "short_raw.apk")
+out_apk = os.path.join(wd_path, "short.apk")
+smali_path = os.path.join(decompiled_app_dir, "smali")
+original_smalitree_path = os.path.join(wd_path, "original_smalitree.pickle")
+cut_smalitree_path = os.path.join(wd_path, "cut_smalitree.pickle")
 
-def remove_methods_in_not_covered_classes(smalitree):
-    i = 0
-    j = 0
-
-    for cl in smalitree.classes:
-        if cl.not_covered():
-            print("{} {}".format(cl.name, cl.covered()))
-            for m in cl.methods:
-                if m.not_covered():
-                    cl.methods.remove(m)
-                    j+=1
-            #smalitree.classes.remove(cl)
-            i += 1
-    print("left classes: {}".format(len(smalitree.classes)))
-    print("removed {} classes".format(i))
-    print("removed {} methods, left {}".format(j, sum([len(cl.methods) for cl in smalitree.classes])))
-
-
-def get_all_method_invokes(smalitree):
-    invokes = set()
-    for cl in smalitree.classes:
-        for m in cl.methods:
-            for insn in m.insns:
-                if insn.opcode_name.startswith("invoke"):
-                    invokes.add(insn.obj.method_desc)
-    return invokes
-
-def get_all_methods_desc(smalitree):
-    signatures = set()
-    for cl in smalitree.classes:
-        for m in cl.methods:
-            signatures.add("{}->{}".format(cl.name, m.descriptor))
-    return signatures
-
-def remove_not_covered_if(smalitree):
-    for cl in smalitree.classes:
-        #if cl.name == "Landroid/support/v7/app/AppCompatDelegateImplBase;":
-        if cl.name != "Landroid/support/constraint/ConstraintLayout;":
-            continue
-        # m = cl.methods[4]
-        # print("method name: {}".format(m.descriptor))
-        for m in cl.methods[7:8]:
-            print(m.descriptor)
-            # if m.name != "setChildrenConstraints":
-            #     continue
-            if not m.synchronized:
-                start_ = 0
-                block = False
-                blocks = 0
-                for i, insn in enumerate(m.insns):
-                    # if i == 18:
-                    #     print(i)
-                    if not block and insn.opcode_name.startswith("if") and not insn.covered: # and insn.cover_code > -1 and not has_label_by_index(m.labels, i):
-                        start_ = i
-                        block = True
-                        continue
-                    if block and (insn.covered or has_covered_lbl(m.labels, i)):
-                        end_ = i
-                        #print("\n".join([ins.buf for ins in m.insns[start_:end_]]))
-                        del m.insns[start_:end_]
-                        recalculate_label_indexes(m.labels, start_, end_)
-                        block = False
-                        blocks += 1
-                        if blocks == 6:
-                            break
-                        #break
-                #break
-        #    break
-        #for m in cl.methods:
-
-def recalculate_label_indexes(labels, start_, end_):
-    d = end_ - start_
-    for (k, v) in labels.items():
-        if v.index >= end_:
-            v.index -= d
-
-
-def has_label_by_index(labels, index):
-    for (k, v) in labels.items():
-        if v.index == index:
-            return True
-    return False
-
-def has_covered_lbl(labels, index):
-    for (k, v) in labels.items():
-        if v.index == index:
-            return v.covered
-    return False
+stub_methods_outpath = os.path.join(wd_path, "stubs.txt")
 
 def main():
-    pickle = r"C:\projects\droidmod\acvcut\wd\metadata\app.pickle"
-    ec = r"C:\projects\droidmod\acvcut\reports\original_io.pilgun.multidexapp\ec_files\onstop_coverage_1578628898500.ec"
-    #app_path = r"C:\projects\droidmod\acvtool-benchmark\apks\simple_apps\app.apk"
-    decompiled_app_dir = r"C:\projects\droidmod\acvcut\wd\orig_apktool"
-    original_smali_path = r"C:\projects\droidmod\acvcut\wd\orig_apktool_copy\smali"
-    out_apk_raw = r"C:\projects\droidmod\acvcut\wd\short_raw.apk"
-    out_apk = r"C:\projects\droidmod\acvcut\wd\short.apk"
-    smali_path = os.path.join(decompiled_app_dir, "smali")
-    clean_smali_dir(smali_path, original_smali_path)
     rm_file(out_apk)
     rm_file(out_apk_raw)
+    rm_file(original_smalitree_path)
+    rm_file(cut_smalitree_path)
     
-    smalitree = reporter.get_covered_smalitree([ec], pickle)
-    remove_not_covered_if(smalitree)
+    clean_smali_dir(smali_path)
     
-    #return
+    smalitree = reporter.get_smalitree(instr_pickle_path)
+    ec = get_ec_file(ec_dir)
+    for ec_file in ec:
+        coverage = reporter.read_ec(ec_file)
+        reporter.cover_smalitree(smalitree, coverage)
+    orig_invokes = invokes.get_invoke_direct_methods(smalitree)
+    insns_stats(smalitree)
 
-    instrumenter = instrumenting.smali_instrumenter.Instrumenter(smalitree, "method", "io.pilgun.multidexapp")
-   
+    basic_block.remove_blocks_from_selected_method(smalitree)
+    stub_methods = methods.clean_not_executed_methods(smalitree)
+    save_list(stub_methods_outpath, stub_methods)
+    methods.remove_static(smalitree)
+    result_invokes = invokes.get_invoke_direct_methods(smalitree)
+    to_remove_invokes = orig_invokes - result_invokes
+    invokes.remove_methods_by_invokes(smalitree, to_remove_invokes)
+    
+    insns_stats(smalitree)
+    save_smali(smali_path, smalitree, package)
+    
+    build_apk(out_apk)
+    test_apk(out_apk, package)
+    
+
+def save_list(path, entities_list):
+    str_list = "\n".join(entities_list)
+    with open(path, 'w') as f:
+        f.write(str_list)
+
+
+def clean_smalitree_coverage(smalitree):
+    for cl in smalitree.classes:
+        for m in cl.methods:
+            m.called = False
+            m.cover_code = -1
+            for insn in m.insns:
+                insn.cover_code = -1
+                insn.covered = False
+            for l in m.labels.values():
+                l.cover_code = -1
+                l.covered = False
+
+
+def insns_stats(smalitree):
+    methods = sum([len(cl.methods) for cl in smalitree.classes])
+    print("total methods: {}".format(methods))
+    sync_methods = sum([sum(1 for m in ms if m.synchronized) for ms in [cl.methods for cl in smalitree.classes]])
+    print("sync methods: {}".format(sync_methods))
+    ignored_methods = sum([sum(1 for m in ms if m.ignore) for ms in [cl.methods for cl in smalitree.classes]])
+    print("ignored methods: {}".format(ignored_methods))
+    insns_sum = sum([sum([len(m.insns) for m in ms]) for ms in [cl.methods for cl in smalitree.classes]])
+    print("total insns: {}".format(insns_sum))
+
+
+def save_smali(smali_path, smalitree, package):
+    instrumenter = instrumenting.smali_instrumenter.Instrumenter(smalitree, "method", package)
     instrumenter.save_instrumented_smali(smali_path, instrument=False)
+
+
+def build_apk(out_apk_path):
     apktool = ApktoolInterface(javaPath = config.APKTOOL_JAVA_PATH,
                                javaOpts = config.APKTOOL_JAVA_OPTS,
                                pathApktool = Libs.APKTOOL_PATH,
                                jarApktool = Libs.APKTOOL_PATH)
-
+    print("output apk: {}".format(out_apk_path))
+    print("decompiled app dir: {}".format(decompiled_app_dir))
     smiler.build_apk(apktool, decompiled_app_dir, out_apk_raw)
-    smiler.sign_align_apk(out_apk_raw, out_apk)
+    smiler.sign_align_apk(out_apk_raw, out_apk_path)
     os.remove(out_apk_raw)
-    smiler.uninstall("io.pilgun.multidexapp")
-    smiler.install(out_apk)
-    os.system("adb shell monkey -p io.pilgun.multidexapp 1")
 
+
+def test_apk(apk_path, package):
+    smiler.uninstall(package)
+    smiler.install(apk_path)
+    os.system("adb logcat -c")
+    os.system("adb shell monkey -p {} 1".format(package))
 
 
 if __name__ == "__main__":

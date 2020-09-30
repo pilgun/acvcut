@@ -27,7 +27,7 @@ def run_actions(parser, args=None):
 
     if args is None:
         args = parser.parse_args()
-    if args.subcmd in ["instrument", "install", "uninstall", "start", "stop", "report"] and args.device:
+    if args.subcmd in ["instrument", "install", "uninstall", "start", "stop", "snap", "report"] and args.device:
             config.adb_path = "{} -s {}".format(config.adb_path, args.device)
     if args.subcmd == "instrument":
         if os.path.isdir(args.working_dir):
@@ -49,7 +49,9 @@ def run_actions(parser, args=None):
             dbg_end=args.dbg_end,
             installation=args.install or args.report,
             granularity=args.granularity,
-            mem_stats=args.memstats)
+            mem_stats=args.memstats, 
+            keep_unpacked=args.keepsources,
+            ignore_filter=args.stubs)
         if args.report:
             smiler.start_instrumenting(package,
                 onstop=lambda: reporter.generate(
@@ -77,15 +79,21 @@ def run_actions(parser, args=None):
             timeout=int(args.timeout)) 
     elif args.subcmd == "stop":
         smiler.stop_instrumenting(args.package_name, int(args.timeout))
+    elif args.subcmd == "snap":
+        if args.repeat:
+            smiler.save_ec_and_screen(args.package_name, int(args.throttle), args.output_dir)
+        else:
+            smiler.snap(args.package_name, 1, args.output_dir)
     elif args.subcmd == "report":
-        xml_html = not (args.xml or args.html) # generate both xml and html by default
+        all_reps = not (args.xml or args.html or args.concise) # generate xml, html and concise reports by default
         reporter.generate(
             args.package_name,
             args.pickle_path,
             args.output_dir,
             args.ec_dir,
-            xml=args.xml or xml_html, html=args.html or xml_html,
-            granularity=args.granularity)
+            xml=args.xml or all_reps, html=args.html or all_reps,
+            granularity=args.granularity, concise=args.concise or all_reps,
+            ignore_filter=args.stubs)
     elif args.subcmd == "sign":
         smiler.sign_align_apk(args.apk_path, "{0}.signed.apk".format(args.apk_path))
     elif args.subcmd == "build":
@@ -137,6 +145,10 @@ def get_parser():
             choices=["single", "verbose"], default=None)
     parser_instrument.add_argument("-d", "--device", metavar="<device>", required=False,
             help="The name of adb device/emulator.", default=None, dest="device")
+    parser_instrument.add_argument("-k", "--keepsources", action="store_true",
+            help="Keep instrumented smali dir.")
+    parser_instrument.add_argument("-s", "--stubs", metavar="<stubs>", required=False,
+            help="Ignores list of stub methods. List methods signatures in txt files", default=None)
     
     parser_install = subparsers.add_parser("install", help="Installs an apk")
     parser_install.add_argument("apk_path", metavar="<path_to_apk>",
@@ -175,6 +187,17 @@ def get_parser():
     parser_stop.add_argument("-d", "--device", metavar="<device>", required=False,
             help="The name of adb device/emulator.", default=None, dest="device")
 
+    parser_snap = subparsers.add_parser("snap", help="Saves runtime current coverage data and screen")
+    parser_snap.add_argument("package_name", metavar="<package.name>")
+    parser_snap.add_argument("-d", "--device", metavar="<device>", required=False,
+            help="The name of adb device/emulator.", default=None, dest="device")
+    parser_snap.add_argument("-r", "--repeat", action="store_true", 
+            help="Repeats coverage saving every 5 seconds.")
+    parser_snap.add_argument("-o", metavar="<output_dir>", required=False,
+            dest="output_dir", help="Output directory")
+    parser_snap.add_argument("-t", "--throttle", metavar="<throttle>", required=False,
+            dest="throttle", help="Delay between snaps.", default=config.throttle)
+
     parser_report = subparsers.add_parser("report", help="Produces a report")
     parser_report.add_argument("package_name", metavar="<package_name>",
             help="Package name")
@@ -194,6 +217,10 @@ def get_parser():
             default=Granularity.default)
     parser_report.add_argument("-d", "--device", metavar="<device>", required=False,
             help="The name of adb device/emulator.", default=None, dest="device")
+    parser_report.add_argument("-c", "--concise", action="store_true",
+            help="Short csv report contains coverage per single .ec file.")
+    parser_report.add_argument("-s", "--stubs", metavar="<stubs>", required=False,
+            help="Ignores list of stub methods. List methods signatures in txt files", default=None)
     
     parser_sign = subparsers.add_parser("sign", help="Signs and alignes an apk.")
     parser_sign.add_argument("apk_path", metavar="<apk_path>", help="An application's path")

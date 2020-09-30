@@ -38,8 +38,8 @@ class LabelNode(object):
     def get_lines(self):
         ''' Returns labels including tries, switches, and arrays.'''
         lines = [":%s" % self.name]
-        for t in self.tries:
-            lines.append(t.buf)
+        # for t in self.tries:
+        #     lines.append(t.buf)
         if self.switch:
             for sl in self.switch.buf:
                 lines.append(sl)

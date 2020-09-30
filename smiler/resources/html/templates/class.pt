@@ -8,7 +8,7 @@
 </head>
 <body>
     <ul class="breadcrumb">
-		<li><i class="ico ico-android"></i><a href="${respath}index.html">${appname}</a></li>
+		<li><i class="ico ico-android"></i><a href="${respath}main_index.html">${appname}</a></li>
 		<li><i class="ico ico-package"></i><a href="index.html">${package}</a></li>
         <li><i class="ico ico-class"></i> ${title}</li>
     </ul>

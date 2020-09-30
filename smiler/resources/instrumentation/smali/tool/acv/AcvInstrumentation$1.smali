@@ -23,7 +23,7 @@
     .locals 0
 
     .prologue
-    .line 250
+    .line 31
     iput-object p1, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
 
     invoke-direct {p0}, Landroid/content/BroadcastReceiver;-><init>()V
@@ -34,19 +34,17 @@
 
 # virtual methods
 .method public onReceive(Landroid/content/Context;Landroid/content/Intent;)V
-    .locals 5
+    .locals 4
 
     .prologue
-    const/4 v4, 0x4
-
-    .line 254
+    .line 34
     const-string v0, "AcvInstrumentation"
 
     new-instance v1, Ljava/lang/StringBuilder;
 
     invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
 
-    const-string v2, "Broadcast received in the thread: "
+    const-string v2, "BroadcastReceiver: onReceive: "
 
     invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
@@ -64,98 +62,29 @@
 
     move-result-object v1
 
+    const-string v2, " ---------"
+
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v1
+
     invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
 
     move-result-object v1
 
     invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I
 
-    .line 256
-    invoke-virtual {p2}, Landroid/content/Intent;->getExtras()Landroid/os/Bundle;
-
-    move-result-object v0
-
-    .line 257
-    if-eqz v0, :cond_0
-
-    .line 258
-    iget-object v1, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
-
-    const-string v2, "cancelAnalysis"
-
-    const/4 v3, 0x0
-
-    invoke-virtual {v0, v2, v3}, Landroid/os/Bundle;->getBoolean(Ljava/lang/String;Z)Z
-
-    move-result v0
-
-    invoke-static {v1, v0}, Ltool/acv/AcvInstrumentation;->access$002(Ltool/acv/AcvInstrumentation;Z)Z
-
-    .line 261
-    :cond_0
-    iget-object v0, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
-
-    invoke-static {v0}, Ltool/acv/AcvInstrumentation;->access$000(Ltool/acv/AcvInstrumentation;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_1
-
-    .line 262
-    iget-object v0, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
-
-    invoke-static {v0}, Ltool/acv/AcvInstrumentation;->access$100(Ltool/acv/AcvInstrumentation;)Landroid/os/Handler;
-
-    move-result-object v0
-
-    const/4 v1, 0x3
-
-    invoke-static {v0, v1}, Landroid/os/Message;->obtain(Landroid/os/Handler;I)Landroid/os/Message;
-
-    move-result-object v0
-
-    .line 263
-    invoke-virtual {v0}, Landroid/os/Message;->sendToTarget()V
-
-    .line 264
-    iget-object v0, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
-
-    invoke-static {v0}, Ltool/acv/AcvInstrumentation;->access$100(Ltool/acv/AcvInstrumentation;)Landroid/os/Handler;
-
-    move-result-object v0
-
-    invoke-static {v0, v4}, Landroid/os/Message;->obtain(Landroid/os/Handler;I)Landroid/os/Message;
-
-    move-result-object v0
-
-    .line 265
-    invoke-virtual {v0}, Landroid/os/Message;->sendToTarget()V
-
-    .line 279
-    :goto_0
-    return-void
-
-    .line 269
-    :cond_1
-    iget-object v0, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
-
-    invoke-static {v0}, Ltool/acv/AcvInstrumentation;->access$200(Ltool/acv/AcvInstrumentation;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_2
-
-    .line 270
+    .line 35
     invoke-static {}, Ljava/lang/System;->currentTimeMillis()J
 
     move-result-wide v0
 
-    .line 271
+    .line 36
     new-instance v2, Ljava/lang/StringBuilder;
 
     invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
 
-    const-string v3, "onstop_coverage_"
+    const-string v3, "coverage_"
 
     invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
@@ -179,39 +108,49 @@
 
     move-result-object v0
 
-    .line 272
-    iget-object v1, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
+    .line 37
+    new-instance v1, Ljava/io/File;
 
-    invoke-static {v1}, Ltool/acv/AcvInstrumentation;->access$100(Ltool/acv/AcvInstrumentation;)Landroid/os/Handler;
+    iget-object v2, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
 
-    move-result-object v1
+    invoke-static {v2}, Ltool/acv/AcvInstrumentation;->access$000(Ltool/acv/AcvInstrumentation;)Ljava/io/File;
 
-    const/4 v2, 0x1
+    move-result-object v2
 
-    invoke-static {v1, v2}, Landroid/os/Message;->obtain(Landroid/os/Handler;I)Landroid/os/Message;
+    invoke-direct {v1, v2, v0}, Ljava/io/File;-><init>(Ljava/io/File;Ljava/lang/String;)V
 
-    move-result-object v1
+    .line 38
+    invoke-static {v1}, Ltool/acv/AcvReporter;->saveExternalPublicFile(Ljava/io/File;)V
 
-    .line 273
-    iput-object v0, v1, Landroid/os/Message;->obj:Ljava/lang/Object;
+    .line 39
+    const-string v1, "AcvInstrumentation"
 
-    .line 274
-    invoke-virtual {v1}, Landroid/os/Message;->sendToTarget()V
+    new-instance v2, Ljava/lang/StringBuilder;
 
-    .line 277
-    :cond_2
-    iget-object v0, p0, Ltool/acv/AcvInstrumentation$1;->this$0:Ltool/acv/AcvInstrumentation;
+    invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
 
-    invoke-static {v0}, Ltool/acv/AcvInstrumentation;->access$100(Ltool/acv/AcvInstrumentation;)Landroid/os/Handler;
+    const-string v3, "BroadcastReceiver: onReceive: "
+
+    invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    invoke-virtual {v2, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
     move-result-object v0
 
-    invoke-static {v0, v4}, Landroid/os/Message;->obtain(Landroid/os/Handler;I)Landroid/os/Message;
+    const-string v2, " ---------"
+
+    invoke-virtual {v0, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
 
     move-result-object v0
 
-    .line 278
-    invoke-virtual {v0}, Landroid/os/Message;->sendToTarget()V
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
 
-    goto :goto_0
+    move-result-object v0
+
+    invoke-static {v1, v0}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I
+
+    .line 40
+    return-void
 .end method

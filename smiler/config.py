@@ -38,16 +38,24 @@ class config(object):
     aapt_path = config_data["AAPT"]
     zipalign = config_data["ZIPALIGN"]
 
-    version = "0.2"
+    version = "1.0"
     logging_yaml = resource_filename('smiler.resources', 'logging.yaml')
 
     default_working_dir = os.path.join(dir_path, "acvtool_working_dir")
     default_report_dir = os.path.join(default_working_dir, "report")
     default_onstop_timeout = 240
 
+    throttle = 10
+
     @staticmethod
     def get_ec_dir(output_dir, package):
         return os.path.join(output_dir, package, "ec_files")
+    
+
+    @staticmethod
+    def get_images_dir(output_dir, package):
+        return os.path.join(output_dir, package, "images")
+    
     
     def check_tools(self):
         err = False

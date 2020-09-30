@@ -37,9 +37,7 @@ class Instrumenter(object):
     def save_instrumented_smali(self, output_dir, instrument=True):
         '''Saves instrumented smali to the specified directory/'''
         print("saving instrumented smali:  %s..." % output_dir)
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
-        os.makedirs(output_dir)
+        Utils.recreate_dir(output_dir)
         classes_info = []
         class_number = 0 # to make array name unique
         # Helps to find specific method that cased a fail after the instrumentation.
@@ -48,21 +46,25 @@ class Instrumenter(object):
         # dbg_ means specific part of the code defined by dbg_start-dbg_end
         # numbers will be instrumented
         dbg_instrument = instrument
+        #temp_class = self.smalitree.classes[4]
+        #print(temp_class.methods[2].insns[0].cover_code)
         for class_ in self.smalitree.classes:
-            class_path = os.path.join(output_dir, class_.folder, class_.file_name)
             code, cover_index, method_number, is_instrumented = self.instrument_class(
                 class_, 
                 class_number, 
                 method_number=method_number,
-                instrument=dbg_instrument,
+                instrument=dbg_instrument and not class_.ignore,
                 dbg_start=self.dbg_start, 
                 dbg_end=self.dbg_end)
-            if dbg_instrument and is_instrumented:
+            if dbg_instrument and class_.is_coverable(): #is_instrumented
                 classes_info.append((class_.name, cover_index, class_number))
                 class_number += 1
+            class_path = os.path.join(output_dir, class_.folder, class_.file_name)
             self.save_class(class_path, code)
             if self.dbg and dbg_instrument and method_number > self.dbg_end: # Now leave other code not instrumented.
                 dbg_instrument = False
+            #print(self.smalitree.classes[4].methods[2].insns[0].cover_code)
+            #print(temp_class.methods[2].insns[0].cover_code)
         if self.dbg:
             print("Number of methods instrumented: {0}-{1} from {2}".format(self.dbg_start, self.dbg_end, method_number))
         if instrument:
@@ -70,7 +72,8 @@ class Instrumenter(object):
             if self.mem_stats:
                 self.save_reporter_array_stats(classes_info)
             Utils.copytree(self.instrumentation_smali_path, output_dir)
-        
+
+
     def generate_reporter_class(self, classes_info, dir_path):
         acv_reporter = AcvReporter(classes_info)
         acv_reporter.save(dir_path)
@@ -98,11 +101,8 @@ class Instrumenter(object):
         method_lines = []
         is_instrumented = False
         for meth in smali_class.methods:
-            dbg_instrument = self.get_dbg_instrument(
-                instrument,
-                method_number,
-                dbg_start,
-                dbg_end)
+            to_instrument = instrument and not meth.ignore
+            dbg_instrument = self.get_dbg_instrument(to_instrument, method_number, dbg_start, dbg_end)
             method_lines, cover_index, method_number, m_instrumented = self.instrument_method(
                 meth,
                 cover_index, smali_class.name,
@@ -114,7 +114,8 @@ class Instrumenter(object):
         class_lines[0:0] = entry_lines
         return ('\n'.join(class_lines), cover_index, method_number, is_instrumented)
 
-    def get_dbg_instrument(self, instrument, method_number, dbg_start,  dbg_end):
+    @staticmethod
+    def get_dbg_instrument(instrument, method_number, dbg_start,  dbg_end):
         return (instrument and dbg_start is None) \
             or (instrument and dbg_start is not None and method_number >= dbg_start and method_number <= dbg_end)
 
@@ -126,8 +127,8 @@ class Instrumenter(object):
         is_not_abstract_or_native = 'abstract' not in method.access and 'native' not in method.access
         is_not_native = 'native' not in method.access
         if is_not_abstract_or_native:
-            is_static = self.is_method_static(method)
-            reg_map = self.map_registers_p_to_v(method, is_static)
+            is_static = Instrumenter.is_method_static(method)
+            reg_map = Instrumenter.map_registers_p_to_v(method, is_static)
             regs = InstrumentingRegisters(method.registers, method.paras, is_static)
             insns, cover_index= self.get_instrumented_insns_and_labels(method, reg_map, regs, cover_index, instrument)
             lines.extend(insns)
@@ -148,7 +149,8 @@ class Instrumenter(object):
         lines.append(method.get_end_line())
         return (lines, cover_index, method_number, is_not_abstract_or_native)
     
-    def map_registers_p_to_v(self, method, is_static):
+    @staticmethod
+    def map_registers_p_to_v(method, is_static):
         ''' Returns dictinary that maps px registers to vx.
         '''
         reg_map = []
@@ -162,7 +164,8 @@ class Instrumenter(object):
 
         return reg_map
 
-    def is_method_static(self, method):
+    @staticmethod
+    def is_method_static(method):
         if 'static' in method.access:
             return True
         return False
@@ -176,7 +179,7 @@ class Instrumenter(object):
         last_insn_index = len(method.insns)-1
         labels = labels_search.find_reversed_by_index(last_insn_index + 1)
         if labels:
-            insns, cover_index = self.get_instrumented_labels(
+            insns, cover_index = Instrumenter.get_instrumented_labels(
                 labels, 
                 regs, 
                 cover_index,
@@ -186,31 +189,36 @@ class Instrumenter(object):
         throw_safe_indexes = []
         if method.synchronized:
             throw_safe_indexes = Utils.scan_synchronized_tries(method)
-        # we start reading the instructions from the end of the method in reversed loop
+        # we start reading instructions from the end of the method in reversed loop
         for i in range(last_insn_index, -1, -1):
+            insn = method.insns[i]
             insns = []
             if instrument:
-                line = self.get_insn_change_registers(method.insns[i], reg_map)
+                line = Instrumenter.get_insn_change_registers(insn, reg_map)
             else:
-                line = method.insns[i].get_line()
+                line = insn.get_line()
             is_throw_safe = Utils.is_in_ranges(i, throw_safe_indexes)
             # dont track 'return*'insns
+            if insn.buf.startswith(".end packed-swi") or insn.buf.startswith(".end array"):
+                print("OPCODE NAME: " + insn.opcode_name)
             if instrument and Granularity.is_instruction(self.granularity) and \
                 not block_move_insn and \
-                not method.insns[i].buf.startswith('return') and \
-                not method.insns[i].buf.startswith('goto') and \
-                not method.insns[i].buf.startswith('throw'):
+                not insn.buf.startswith('return') and \
+                not insn.buf.startswith('goto') and \
+                not insn.buf.startswith('throw') and \
+                insn.opcode_name != "packed-switch" and \
+                insn.opcode_name != "nop":
                 safe_insns, throwable_insns = self.get_throw_safe_tracking(line, regs, cover_index, goto_hack_i)
                 lines[0:0] = safe_insns
                 lines.extend(throwable_insns)
                 if len(throwable_insns) > 0:
                     goto_hack_i += 1
-                method.insns[i].cover_code = cover_index
+                insn.cover_code = cover_index
                 cover_index += 1
             lines.insert(0, line)
             # set this flag if instruction before current should not be instrumented
             block_move_insn = instrument and Granularity.is_instruction(self.granularity) and \
-                self.not_instr_regex.match(method.insns[i].buf) is not None
+                self.not_instr_regex.match(insn.buf) is not None
             labels = labels_search.find_reversed_by_index(i)
             if labels:
                 safe_insns, throwable_insns, cover_index = self.get_throw_safe_instr_labels(
@@ -223,9 +231,10 @@ class Instrumenter(object):
             # :try_end_x goes immediatly after monitor-enter
             if instrument and not block_move_insn and labels and method.insns[i-1].buf.startswith('monitor-enter') and any([any(l.tries) for l in labels]):
                 block_move_insn = True
+            #prev_insn = ins
         #first tracking statement in the method
         if instrument:
-            insns = self.get_tracking_insns(regs, cover_index)
+            insns = Instrumenter.get_tracking_insns(regs, cover_index)
             lines[0:0] = insns
             method.cover_code = cover_index
             cover_index += 1
@@ -248,7 +257,7 @@ class Instrumenter(object):
         safe_insns.append(goto_hack)
         safe_insns.append(goto_back_lbl)
         throwable_insns.append(goto_lbl)
-        throwable_insns.extend(self.get_tracking_insns(regs, cover_index))
+        throwable_insns.extend(Instrumenter.get_tracking_insns(regs, cover_index))
         throwable_insns.append(goto_back)
         return safe_insns, throwable_insns
 
@@ -266,20 +275,21 @@ class Instrumenter(object):
             safe_insns.append(goto)
             safe_insns.append(goto_back_lbl)
             throwable_insns.append(goto_lbl)
-            throwable_insns.extend(self.get_tracking_insns(regs, cover_index))
+            throwable_insns.extend(Instrumenter.get_tracking_insns(regs, cover_index))
             throwable_insns.append(goto_back)
             cover_index += 1
         return (safe_insns, throwable_insns, cover_index)
 
-    def get_instrumented_labels(self, labels, regs, cover_index, instrument=True):
+    @staticmethod
+    def get_instrumented_labels(labels, regs, cover_index, instrument=True):
         insns = []
         is_try_end = False
         for l in labels:
-            if instrument:
+            if instrument and not l.switch and not l.array_data:
                 # Find the case when the new try_start goes immediatly after try_end 
                 # and track this exceptional case.
                 if is_try_end and l.name.startswith("try_start"):
-                    insns.extend(self.get_tracking_insns(regs, cover_index))
+                    insns.extend(Instrumenter.get_tracking_insns(regs, cover_index))
                     cover_index += 1
                 if l.name.startswith("try_end"):
                     is_try_end = True
@@ -287,8 +297,8 @@ class Instrumenter(object):
             insns.extend(l.get_lines())
         # Insert the only one track for a bunch of lables. We dont care to 
         # which of the labels the PC was navigated to. Handled in the report code.
-            if instrument:
-                insns.extend(self.get_tracking_insns(regs, cover_index))
+            if instrument and not l.switch and not l.array_data:
+                insns.extend(Instrumenter.get_tracking_insns(regs, cover_index))
                 cover_index += 1
         return (insns, cover_index)
 
@@ -329,12 +339,14 @@ class Instrumenter(object):
         insns.append(init1)
         return insns
 
-    def get_tracking_insns(self, regs, cover_index):
+    @staticmethod
+    def get_tracking_insns(regs, cover_index):
         line1 = "const/16 %s, %s" % (regs.v2, hex(cover_index))
         line2 = "aput-boolean %s, %s, %s" % (regs.v1, regs.v0, regs.v2)
         return [line1, line2]
     
-    def get_insn_change_registers(self, insn, reg_map):
+    @staticmethod
+    def get_insn_change_registers(insn, reg_map):
         line = ''
         if insn.fmt:
             if insn.fmt == '35c':
@@ -359,10 +371,11 @@ class Instrumenter(object):
                 # regex examples: " p0", " p1", " p2"
                 matched = re.findall('\s(p\d+)(?:,|$)', line)
                 if len(matched) > 0:
-                    line = self.replace_registers(line, matched, reg_map)
+                    line = Instrumenter.replace_registers(line, matched, reg_map)
         return line
 
-    def replace_registers(self, line, matched, reg_map):
+    @staticmethod
+    def replace_registers(line, matched, reg_map):
         for reg in matched:
             line = re.sub('(%s)' % reg, reg_map[reg], line, 1) 
         return line

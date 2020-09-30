@@ -18,6 +18,13 @@ class Utils(object):
                 shutil.rmtree(path) 
 
     @staticmethod
+    def recreate_dir(path):
+        Utils.rm_tree(path)
+        if os.path.isdir(path):
+            raise Exception("shutil.rmtree didn't manage to remove dir in time: {}".format(path))
+        os.makedirs(path)
+
+    @staticmethod
     def get_groupped_classes(tree):
         # Group classes by relative path to generate index.html.
         groups = []
