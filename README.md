@@ -1,3 +1,5 @@
+- **This repository is not maintained at the moment. Please explore latest shrinking functionality in [ACVTool](https://github.com/pilgun/acvtool).**
+
 # ACVCut
 
 This tool prototype shrinks Android apps towards executed code. 
